@@ -7,7 +7,7 @@ SRC_DIR =
 SRC_FILES = *.cpp
 CFLAGS = -Wall -Wextra
 LDFLAGS =
-LDLIBS = `sdl2-config --libs`
+LDLIBS = `sdl2-config --libs` -lSDL2_ttf
 
 all:
 	$(CC) $(CFLAGS) $(LDFLAGS) $(SRC_FILES) -o $(TARGET) $(LDLIBS)

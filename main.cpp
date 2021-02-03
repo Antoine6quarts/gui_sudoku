@@ -3,7 +3,7 @@
 
 int main()
 {
-    gui();
+    gui_main();
 
     return 0;
 }

@@ -11,33 +11,49 @@ typedef struct Case
       2 : wrong      red      : 255, 000, 000
       3 : correct    green    : 000, 255, 000
      */
-    int state = 0;
+    int state {0};
     Uint8 r {255};
     Uint8 g {255};
     Uint8 b {255};
     int value {0};
-    SDL_Rect rectangle;
+    SDL_Rect rectangle{};
 } Case;
 
+typedef struct Box
+{
+    int x{};
+    int y{};
+    int size{};
+} Box;
 
-typedef struct Window_main
+typedef struct Game
 {
     SDL_Window *window;
     SDL_Renderer *renderer;
-} Window_main;
+    int selectedCase{-1};
+    /*
+      STATE
+      0 : correct
+      1 : wrong
+    */
+    int state{1};
+    SDL_Rect board{};
+    Box box{};
+    Case cases[81]{};
+} Game;
 
 
 void sdl_error(const char *message);
-void initialise_cases(int x_start, int y_start, int bigLine, int smallLine,
-		      int caseSize, struct Case cases[]);
-void update_case_color(Case cases[], int position);
-void update_case(struct Window_main *window_main, Case cases[],
-		 int position, int draw);
-void draw_board(struct Window_main *window_main, Case cases[]);
-int get_case_clicked(Window_main *window_main, Case cases[], int x, int y);
-void check_selected_case(Window_main *window_main, Case cases[]);
-void on_key_pressed_event(Window_main *window_main, Case cases[], char key);
-void on_click_left_event(Window_main *window_main, Case cases[]);
-void gui();
-
+void update_box(Game *game);
+void update_cases_rectangle(Game *game, int smallLine, int bigLine, int caseSize);
+void update_case_state(Game *game, int position, int state);
+void number(Game *game, int position);
+void update_case(Game *game, int position, int draw);
+void update_board(Game *game);
+void draw_main(Game *game);
+int get_case_clicked(Game *game, int x, int y);
+void on_click_left_event(Game *game);
+void on_key_pressed_event(Game *game, char key);
+void gui_main();
+    
 #endif

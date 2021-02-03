@@ -1,18 +1,24 @@
 #include <iostream>
 #include "SDL2/SDL.h"
+#include <SDL2/SDL_ttf.h>
 #include "gui.h"
+#include "solver.h"
 
-#define SELECTED_R 223
-#define SELECTED_G 223
-#define SELECTED_B 39
+#define BACKGROUND_R 0xED
+#define BACKGROUND_G 0x92
+#define BACKGROUND_B 0x0
 
-#define WRONG_R 255
-#define WRONG_G 0
-#define WRONG_B 0
+#define SELECTED_R 0xDF
+#define SELECTED_G 0xDF
+#define SELECTED_B 0x27
 
-#define CORRECT_R 0
-#define CORRECT_G 255
-#define CORRECT_B 0
+#define WRONG_R 0xFF
+#define WRONG_G 0x0
+#define WRONG_B 0x0
+
+#define CORRECT_R 0x0
+#define CORRECT_G 0xFF
+#define CORRECT_B 0x0
 
 #define DEFAULT 0
 #define SELECTED 1
@@ -25,23 +31,42 @@ void sdl_error(const char *message)
     SDL_Log("\n%s : %s\n",  message, SDL_GetError());
 }
 
-void initialise_cases(int x_start, int y_start, int bigLine, int smallLine,
-		      int caseSize, struct Case cases[])
+void update_box(Game *game)
 {
-    int i = x_start+bigLine;
-    int j = y_start+bigLine;
-    int counter_x = 0;
-    int counter_y = 0;
-    int position = 0;
+    int w;
+    int h;
+    SDL_GetRendererOutputSize(game->renderer, &w, &h);
+
+    if (w<h)
+	{
+	    game->box.size = w;
+	    game->box.x = 0;
+	    game->box.y = 0;
+	}
+    else
+	{
+	    game->box.size = h;
+	    game->box.x = w/2-game->box.size/2;
+	    game->box.y = 0;
+	}    
+}
+
+void update_cases_rectangle(Game *game, int smallLine, int bigLine, int caseSize)
+{    
+    int i = game->board.x + bigLine;
+    int j = game->board.y + bigLine;
+    int counter_x{0};
+    int counter_y{0};
+    int position{0};
 
     while(counter_y < 9)
 	{
 	    while (counter_x < 9)
 		{
-		    cases[position].rectangle.x = i;
-		    cases[position].rectangle.y = j;
-		    cases[position].rectangle.h = caseSize;
-		    cases[position].rectangle.w = caseSize;
+		    game->cases[position].rectangle.x = i;
+		    game->cases[position].rectangle.y = j;
+		    game->cases[position].rectangle.h = caseSize;
+		    game->cases[position].rectangle.w = caseSize;
 		    position++;
 		    counter_x++;
 		    i+=caseSize;
@@ -51,7 +76,7 @@ void initialise_cases(int x_start, int y_start, int bigLine, int smallLine,
 			i+=smallLine;
 		}
 	    counter_x = 0;
-	    i = x_start+bigLine;
+	    i = game->board.x+bigLine;
 	    counter_y++;
 	    j+=caseSize;
 	    if (counter_y%3 == 0)
@@ -61,117 +86,158 @@ void initialise_cases(int x_start, int y_start, int bigLine, int smallLine,
 	}
 }
 
-void update_case_color(Case cases[], int position)
+void update_case_state(Game *game, int position, int state)
 {
-    switch(cases[position].state)
+    game->cases[position].state = state;
+    if (state == SELECTED)
+	game->selectedCase = position;
+    if (state == DEFAULT)
+	game->selectedCase = -1;
+    
+    switch(game->cases[position].state)
 	{
 	case DEFAULT:
-	    cases[position].r = 255;
-	    cases[position].g = 255;
-	    cases[position].b = 255;
+	    game->cases[position].r = 255;
+	    game->cases[position].g = 255;
+	    game->cases[position].b = 255;
 	    break;
 	case SELECTED:
-	    cases[position].r = SELECTED_R;
-	    cases[position].g = SELECTED_G;
-	    cases[position].b = SELECTED_B;
+	    game->cases[position].r = SELECTED_R;
+	    game->cases[position].g = SELECTED_G;
+	    game->cases[position].b = SELECTED_B;
 	    break;
 	case WRONG:
-	    cases[position].r = WRONG_R;
-	    cases[position].g = WRONG_G;
-	    cases[position].b = WRONG_B;
+	    game->cases[position].r = WRONG_R;
+	    game->cases[position].g = WRONG_G;
+	    game->cases[position].b = WRONG_B;
 	    break;
 	case CORRECT:
-	    cases[position].r = CORRECT_R;
-	    cases[position].g = CORRECT_G;
-	    cases[position].b = CORRECT_B;
+	    game->cases[position].r = CORRECT_R;
+	    game->cases[position].g = CORRECT_G;
+	    game->cases[position].b = CORRECT_B;
 	    break;
 	}
+    update_case(game, position, 1);
 }
 
-void update_case(struct Window_main *window_main, Case cases[],
-		 int position, int draw)
+void number(Game *game, int position)
 {
-    update_case_color(cases, position);
-    SDL_SetRenderDrawColor(window_main->renderer,
-				   cases[position].r,
-				   cases[position].g,
-				   cases[position].b,
-				   255);    
+    if (game->cases[position].value != 0)
+	{	    
+	    TTF_Init();
 	    
-    SDL_RenderFillRect(window_main->renderer, &cases[position].rectangle);
+	    TTF_Font *font = TTF_OpenFont("myfont.ttf", game->cases[0].rectangle.w*5);
+	    if (font == NULL)
+		{
+		    printf("TTF_Font: %s\n", TTF_GetError());
+		    exit(2);
+		}
+	    SDL_Color color = {0, 0, 0, 255};
+	    char number[1+sizeof(char)];
+	    std::sprintf(number, "%d", game->cases[position].value);
+	    SDL_Surface *surface = TTF_RenderText_Blended(font, number, color);
+	    TTF_CloseFont(font);
+	    SDL_Texture *texture = SDL_CreateTextureFromSurface(game->renderer, surface);
+	    SDL_FreeSurface(surface);
+
+	    SDL_RenderCopy(game->renderer, texture, NULL, &game->cases[position].rectangle);
+	    //SDL_RenderPresent(game->renderer);
     
-    // ADD DRAW NUMBER HERE
+	    SDL_DestroyTexture(texture);
 
-    if (draw)
-	SDL_RenderPresent(window_main->renderer);
-}
-
-void draw_board(struct Window_main *window_main, Case cases[])
-{
-    // Background
-    SDL_SetRenderDrawColor(window_main->renderer, 223, 223, 39, 255);
-    SDL_RenderClear(window_main->renderer);
-
-    // Get the size of the window
-    int w;
-    int h;
-    SDL_GetRendererOutputSize(window_main->renderer, &w, &h);    
-
-    // Set the width of the case separator
-    // Depending on the size of the window
-    int smallLine = 1+h/1000;
-    int bigLine = 3+h/1000;
-    int caseSize;
-    int size;
-
-    // Set the size of the cases, separations, and the board
-    if (w < h*85/100)
-	{
-	    smallLine = 1+w/1000;
-	    bigLine = 3+w/1000;
-	    caseSize = (w*93/100 - 6*smallLine - 4*bigLine)/9;
-	    size = 9*caseSize + 6*smallLine + 4*bigLine;
+	    TTF_Quit();
 	}
     else
 	{
-	    smallLine = 1+h/1000;
-	    bigLine = 3+h/1000;
-	    caseSize = (h*80/100 - 6*smallLine - 4*bigLine)/9;
-	    size = 9*caseSize + 6*smallLine + 4*bigLine;
-	}
-
-    // Black square behind the cases (for the lines between)
-    SDL_SetRenderDrawColor(window_main->renderer, 0, 0, 0, 255);
-    int x_start = w/2-size/2;
-    int y_start = h/100;
-    SDL_Rect rectangle;
-    rectangle.x = x_start;
-    rectangle.y = y_start;
-    rectangle.w = size;
-    rectangle.h = size;
-    SDL_RenderFillRect(window_main->renderer, &rectangle);
-
-    // Initialise cases (positions, size, color)
-    initialise_cases(x_start, y_start, bigLine, smallLine, caseSize, cases);
-
-    // Add the cases to the renderer
-    for (int i = 0; i<81; i++)
-	{
-	    update_case(window_main, cases, i, 0);
-	}    
-
-    // Draw the renderer
-    SDL_RenderPresent(window_main->renderer);
+	    game->cases[position].value = 0;
+	    SDL_SetRenderDrawColor(game->renderer,
+				   game->cases[position].r,
+				   game->cases[position].g,
+				   game->cases[position].b,
+				   255);
+	    SDL_RenderFillRect(game->renderer, &game->cases[position].rectangle);
+	    //SDL_RenderPresent(game->renderer);    
+	}   
 }
 
-int get_case_clicked(Window_main *window_main, Case cases[], int x, int y)
+void update_case(Game *game, int position, int draw)
+{    
+    SDL_SetRenderDrawColor(game->renderer,
+				   game->cases[position].r,
+				   game->cases[position].g,
+				   game->cases[position].b,
+				   255);
+	    
+    SDL_RenderFillRect(game->renderer, &game->cases[position].rectangle);
+
+    number(game, position);
+    
+    if (draw)
+	SDL_RenderPresent(game->renderer);    
+}
+
+void update_board(Game *game)
 {
-    for (int i = 0; i<81; i++)	
+    int smallLine = 1+game->box.size/1000;
+    int bigLine = smallLine*2;
+    
+    int caseSize = (game->box.size*80/100 - 6*smallLine - 4*bigLine)/9;
+    int size = 9*caseSize + 6*smallLine + 4*bigLine;
+
+    game->board.x = game->box.x + game->box.size/2 - size/2;
+    game->board.y = game->box.size/100;
+    game->board.w = size;
+    game->board.h = size;
+
+    SDL_SetRenderDrawColor(game->renderer, 0, 0, 0, 255);
+    SDL_RenderFillRect(game->renderer, &(game->board));
+
+    update_cases_rectangle(game, smallLine, bigLine, caseSize);
+    for (int i = 0; i<81; i++)
+	{	    
+	    update_case(game, i, 0);
+	}
+}
+
+void draw_main(Game *game)
+{
+    // Background
+    SDL_SetRenderDrawColor(game->renderer,
+			   BACKGROUND_R,
+			   BACKGROUND_G,
+			   BACKGROUND_B,
+			   0);
+    SDL_RenderClear(game->renderer);
+
+    update_box(game);
+
+    // TEST BOX (REMOVE)
+    /*
+    SDL_Rect rect;
+    rect.x = game->box.x;
+    rect.y = game->box.y;
+    rect.w = game->box.size;
+    rect.h = game->box.size;    
+    SDL_SetRenderDrawColor(game->renderer, 255, 0, 0, 255);
+    SDL_RenderFillRect(game->renderer, &rect);
+    */
+    // END TEST BOX
+
+    update_board(game);    
+    
+    // Draw the renderer
+    SDL_RenderPresent(game->renderer);
+}
+
+
+int get_case_clicked(Game *game, int x, int y)
+{
+    for (int i = 0; i<81; i++)
 	{
-	    if (x > cases[i].rectangle.x &&
-		x < cases[i].rectangle.x + cases[i].rectangle.w &&
-		y > cases[i].rectangle.y &&
-		y < cases[i].rectangle.y + cases[i].rectangle.h)
+	    if (x > game->cases[i].rectangle.x &&
+		x < game->cases[i].rectangle.x + game->cases[i].rectangle.w &&
+		y > game->cases[i].rectangle.y &&
+		y < game->cases[i].rectangle.y + game->cases[i].rectangle.h)
 		{
 		    return i;
 		}	    
@@ -179,121 +245,101 @@ int get_case_clicked(Window_main *window_main, Case cases[], int x, int y)
     return -1;
 }
 
-void check_selected_case(Window_main *window_main, Case cases[])
+void on_click_left_event(Game *game)
 {
-    for (int i = 0; i<81; i++)
-	{
-	    if (cases[i].r == SELECTED_R &&
-		cases[i].g == SELECTED_G &&
-		cases[i].b == SELECTED_B)
-		{
-		    cases[i].r = 255;
-		    cases[i].g = 255;
-		    cases[i].b = 255;
-		    update_case(window_main, cases, i, 1);
-		}
-	}
-}
+    if (game->selectedCase != -1)	
+	update_case_state(game, game->selectedCase, 0);	
 
-void on_key_pressed_event(Window_main *window_main, Case cases[], char key)
-{
-    if (key >= '0' && key <= '9')
-    	{
-	    int position = 0;
-	    int searching = 1;
-	    while (searching && position<81)
-		{
-		    if (cases[position].r == SELECTED_R &&
-			cases[position].g == SELECTED_G &&
-			cases[position].b == SELECTED_B)
-			{
-			    cases[position].value = key - '0';
-			    cases[position].state = DEFAULT;
-			    update_case(window_main, cases, position, 1);
-			    searching = 0;
-			}
-		    position++;
-		}
-	}    
-}
-
-void on_click_left_event(Window_main *window_main, Case cases[])
-{
-    check_selected_case(window_main, cases);
-    
     int x;
     int y;
     SDL_GetMouseState(&x, &y);
-    int position = get_case_clicked(window_main, cases, x, y);
+    int position = get_case_clicked(game, x, y);
     if (position != -1)
 	{
-	    // Case selected
-	    cases[position].state = SELECTED;
-	    update_case(window_main, cases, position, 1);
-	    // ask a number :
-	    //    1. update cases[position].value
-	    //    2. update case[position] color to white
-	    //    3. draw case white
-	    //    4. draw number
-	    
+	    update_case_state(game, position, SELECTED);
 	}
 }
 
-void gui()
+void on_key_pressed_event(Game *game, char key)
+{
+    if (key == 's')
+	solve(game);
+    if (key == 'c')
+	checkGrid(game);
+    if (key == 'a')
+	auto_correct(game);
+    if (key >= '0' && key <= '9' && game->selectedCase != -1)
+    	{
+	    game->cases[game->selectedCase].value = key - '0';	    
+	    update_case_state(game, game->selectedCase, DEFAULT);
+	    if(game->state == 0)
+		{
+		    game->state = 1;
+		    for(int i = 0; i<81; i++)
+			update_case_state(game, i, DEFAULT);
+		}
+	}
+}
+
+void gui_main()
 {
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
-    
+
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
-	sdl_error("SDL_Init failed");
+	sdl_error("SDL_Init failed\n");
 
     if (SDL_CreateWindowAndRenderer(800, 600, SDL_WINDOW_RESIZABLE, &window, &renderer) != 0)
-	sdl_error("SDL_CreateWindowAndRenderer");
-
-    Case cases[81];
-    
-    Window_main window_main =
-	{
-	 .window = window,
-	 .renderer = renderer,
-	};
+	sdl_error("SDL_CreateWindowAndRenderer failed\n");
 
     SDL_SetWindowMinimumSize(window, 700, 500);
 
-    draw_board(&window_main, cases);
-
-    int program_executing = 1;
-    while(program_executing != 0)
+    // Initialise game
+    Game game =
 	{
-	    SDL_Event event;
+	 .window = window,
+	 .renderer = renderer,	 
+	 .selectedCase{-1},
+	 .state{1},
+	 .board{},
+	 .box{},
+	 .cases{}
+	};
 
+    draw_main(&game);
+
+    SDL_Event event;
+    
+    int running = 1;
+    while(running)
+	{
+	    SDL_Delay(70);
 	    while(SDL_PollEvent(&event))
 		{
 		    switch(event.type)
 			{
 			case SDL_WINDOWEVENT:
 			    if (event.window.event == SDL_WINDOWEVENT_RESIZED)
-				draw_board(&window_main, cases);
+				draw_main(&game);
 			    break;
 			case SDL_MOUSEBUTTONDOWN:
 			    if (event.button.button == SDL_BUTTON_LEFT)
-				on_click_left_event(&window_main, cases);
+				on_click_left_event(&game);
 			    break;
 			case SDL_KEYDOWN:
-			    on_key_pressed_event(&window_main, cases, event.key.keysym.sym);
+			    on_key_pressed_event(&game, event.key.keysym.sym);
 			    break;
 			case SDL_QUIT:
-			    program_executing = 0;
+			    running = 0;
 			    break;
 			default:
 			    break;
 			}
 		}
 	}
-
+    
     
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
 }
-
